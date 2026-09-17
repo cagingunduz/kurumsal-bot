@@ -1,0 +1,96 @@
+# exitpump_bot configuration
+# Bu bot varsayılan olarak PAPER TRADING modundadır. Gerçek para ile emir
+# göndermez. Canlı emir göndermek istersen execution.mode değerini bilinçli
+# olarak "testnet" ya da "live" yapman ve kendi API anahtarlarını girmen
+# gerekir (bkz. README "Canlıya geçiş" bölümü).
+
+exchange:
+  # provider: "okx" | "binance" -- history_loader.py ve main_backtest.py bu alana göre
+  # hangi istemciyi (src/data/okx_client.py veya src/data/binance_client.py) kullanacağını seçer.
+  # Varsayılan "okx" yapıldı çünkü Binance'e giden Python isteklerinde makinende SSL
+  # sertifika zinciri hatası vardı; OKX farklı bir host olduğu için bu sorunu bypass edebilir.
+  # Binance'e dönmek istersen provider: binance ve symbol: BTCUSDT yap.
+  provider: okx
+  name: okx_swap
+  symbol: "BTC-USDT-SWAP"     # OKX perpetual swap sembol formatı (Binance: BTCUSDT)
+  okx_oi_ccy: "BTC"            # OI geçmişi endpoint'i instId değil ccy bazında (bkz. okx_client.py)
+  base_url_rest: "https://www.okx.com"
+  base_url_ws: "wss://ws.okx.com:8443/ws/v5/public"
+  # Sadece PUBLIC endpoint'ler kullanılıyor (candles, books, trades, open-interest) --
+  # backtest/paper modunda API anahtarı GEREKMİYOR. Aşağıdaki okx bloğu sadece
+  # ileride canlıya geçilirse (execution.mode != paper) kullanılacak; o zaman anahtarları
+  # config'e DEĞİL, Railway/ortam değişkenlerine (env var) koy.
+  okx:
+    api_key_env: "OKX_API_KEY"
+    api_secret_env: "OKX_API_SECRET"
+    passphrase_env: "OKX_API_PASSPHRASE"
+
+timeframes:
+  primary: "1m"          # sinyal/execution timeframe
+  htf_context: "1h"       # üst zaman dilimi konteksti (trend/rejim filtresi)
+
+vwap:
+  session_reset_hour_utc: 0
+  rolling_periods_days: [30, 90, 365]
+  multi_period: ["W", "M", "Q", "Y"]   # haftalık/aylık/çeyreklik/yıllık
+  band_std_devs: [1]
+
+volume_profile:
+  # AMT / Market Profile ayarları
+  lookback_days: 9          # exitpump'ın makalede kullandığı "9 günlük composite" örneği
+  value_area_pct: 0.70       # VAH/VAL için hacim yüzdesi (~%68-70)
+  price_bins: 100
+
+order_book:
+  depth_ranges_pct: [2.5, 5, 10, 25]
+  large_order_filter_pct: 0.5   # ortalamanın üstündeki büyük emirleri filtrelemek için eşik
+  reversal_signal_depth_pct: 25  # exitpump'ın "reversal için 25% depth" tercihi
+
+cvd:
+  divergence_lookback_bars: 20
+  use_timeframes: ["1m", "5m", "15m", "30m"]   # makalede: yüksek TF'de kullanma
+
+open_interest:
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  poll_interval_sec: 60   # Binance OI endpoint'i genelde 5m/15m/30m/1h aralıklarını destekler
+
+macro_blackout:
+  enabled: true
+  # Yüksek etkili makro olaylardan (FOMC vb.) önce/sonra yeni sinyal açmayı durdurur.
+  # Zaman damgalarını kendin ekle (UTC, ISO-8601). Bot her sinyalde bu listeyi kontrol eder.
+  minutes_before: 60
+  minutes_after: 30
+  events_utc: []   # örn: ["2026-10-29T18:00:00"]
+
+strategy:
+  # Confluence: bir sinyalin geçerli sayılması için gereken minimum teyit sayısı
+  min_confluence_score: 3   # 5 üzerinden (VAH/VAL konumu, CVD, OrderBook depth, OI+CVD squeeze, HTF trend)
+  cooldown_minutes_after_trade: 15
+  max_concurrent_positions: 1
+
+risk:
+  account_equity_usdt: 10000.0     # paper equity başlangıcı
+  risk_per_trade_pct: 0.5          # işlem başına sermayenin %'si
+  max_daily_loss_pct: 2.0          # bu kayba ulaşınca bot o gün yeni işlem açmaz
+  reward_risk_ratio: 2.0           # sabit R:R hedefi (stop mesafesine göre TP)
+  stop_method: "avwap"             # "avwap" | "atr"
+  atr_period: 14
+  atr_multiplier: 1.5
+
+execution:
+  mode: "paper"    # "paper" | "testnet" | "live"  -- live modu bu proje içinde implemente edilmemiştir (bkz README)
+  api_key_env: "BINANCE_API_KEY"
+  api_secret_env: "BINANCE_API_SECRET"
+
+notify:
+  telegram:
+    enabled: false
+    bot_token_env: "TELEGRAM_BOT_TOKEN"
+    chat_id_env: "TELEGRAM_CHAT_ID"
+
+logging:
+  trade_log_csv: "logs/paper_trades.csv"
+  equity_log_csv: "logs/equity_curve.csv"
+  level: "INFO"
