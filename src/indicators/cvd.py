@@ -14,6 +14,7 @@ Divergence sınıflandırması (makaledeki 4 senaryo):
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,11 +22,22 @@ import numpy as np
 import pandas as pd
 
 
+def _to_pandas_freq(timeframe: str) -> str:
+    """Borsa-stili interval string'ini ("1m", "5m", "1h", "1d") pandas resample
+    frekans alias'ına çevirir. pandas >=2.2'de bare 'm' (dakika) alias'ı kaldırıldı,
+    yerine 'min' kullanılmalı -- 'h'/'d' zaten geçerli."""
+    match = re.fullmatch(r"(\d+)m", timeframe)
+    if match:
+        return f"{match.group(1)}min"
+    return timeframe
+
+
 def trades_to_delta_bars(agg_trades: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     """aggTrades (index=time, kolonlar: signed_qty, qty) -> OHLC-benzeri delta barları."""
-    delta = agg_trades["signed_qty"].resample(timeframe).sum().rename("delta")
-    buy_vol = agg_trades.loc[agg_trades["side"] == "buy", "qty"].resample(timeframe).sum().rename("buy_volume")
-    sell_vol = agg_trades.loc[agg_trades["side"] == "sell", "qty"].resample(timeframe).sum().rename("sell_volume")
+    freq = _to_pandas_freq(timeframe)
+    delta = agg_trades["signed_qty"].resample(freq).sum().rename("delta")
+    buy_vol = agg_trades.loc[agg_trades["side"] == "buy", "qty"].resample(freq).sum().rename("buy_volume")
+    sell_vol = agg_trades.loc[agg_trades["side"] == "sell", "qty"].resample(freq).sum().rename("sell_volume")
     out = pd.concat([delta, buy_vol, sell_vol], axis=1).fillna(0.0)
     out["cvd"] = out["delta"].cumsum()
     return out
